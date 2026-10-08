@@ -1,0 +1,52 @@
+name: Product feeds
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feeds
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Restore previous feeds
+        run: |
+          mkdir -p public
+          if git fetch --depth=1 origin gh-pages 2>/dev/null; then
+            git archive FETCH_HEAD | tar -x -C public
+          fi
+
+      - name: Build feeds
+        env:
+          STORES_JSON: ${{ secrets.STORES_JSON }}
+        run: python build_feeds.py
+
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd public
+          rm -rf .git
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "feed-bot"
+          git config user.email "feed-bot@users.noreply.github.com"
+          git add -A
+          git commit -qm "Feeds $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
