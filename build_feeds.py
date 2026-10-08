@@ -61,7 +61,8 @@ def get_token(store):
         },
         timeout=30,
     )
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"Token error {r.status_code}: {r.text[:500]}")
     return r.json()["access_token"]
 
 
@@ -72,7 +73,8 @@ def gql(store, token, query, variables=None):
         headers={"X-Shopify-Access-Token": token},
         timeout=60,
     )
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"API error {r.status_code}: {r.text[:500]}")
     data = r.json()
     if data.get("errors"):
         raise RuntimeError(f"GraphQL errors: {data['errors']}")
@@ -292,7 +294,14 @@ def build_xml(shop, products):
 # ---------------------------------------------------------------- main
 
 def main():
-    stores = json.loads(os.environ["STORES_JSON"])
+    raw = os.environ.get("STORES_JSON", "").strip()
+    if not raw:
+        sys.exit("STORES_JSON порожній: перевірте назву секрету в Settings → Secrets and variables → Actions")
+    stores = json.loads(raw)
+    for s in stores:
+        for k in ("client_id", "client_secret", "token", "shop"):
+            if isinstance(s.get(k), str):
+                s[k] = s[k].strip()
     os.makedirs(OUT_DIR, exist_ok=True)
     failed = []
     for store in stores:
